@@ -1,0 +1,1454 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>ETalking Demo 通知模板產生器</title>
+<!--
+══════════════════════════════════════════════════════════════════
+  ETalking Demo 通知模板產生器 · Release Notes
+══════════════════════════════════════════════════════════════════
+
+  版本控管：單一來源 = window.APP_VERSION（於 <script> 開頭宣告）
+  Title / 頁首副標 / 預覽 footer 皆自動注入，不要散寫版本字串。
+
+──────────────────────────────────────────────────────────────────
+  v3.3.0 · 2026-04-24
+──────────────────────────────────────────────────────────────────
+  新增
+  · URL 參數收件（?room= &name= &age= &time= &sale=）—— 配合
+    Tampermonkey 腳本從後台列表一鍵帶入
+  · localStorage 快取：fetch 結果 20 分鐘內重用，省去每次重抓
+    Google Sheet；命中時狀態列顯示淡灰「（快取）」標籤
+  · 強制重載入口：?force=1 或點狀態列「重抓」連結
+  · 版本號統一為 window.APP_VERSION 單一變數
+
+  修正
+  · loadConfig() 的 default_time 會蓋掉 URL time 參數的問題
+    （現在 URL 有 time 時 default_time 不套）
+
+──────────────────────────────────────────────────────────────────
+  v3.2.0
+──────────────────────────────────────────────────────────────────
+  · 標題改為「請老師 Demo 通知模板產生器」
+
+──────────────────────────────────────────────────────────────────
+  v3.1.x（歷史）
+──────────────────────────────────────────────────────────────────
+  · 幼稚園/青少年/成人三 tab、遲到通知、IT 環境測試模板
+  · 班表 fetch、業務 chip、程度聯動、Demo/摺紙切換
+
+══════════════════════════════════════════════════════════════════
+-->
+<meta name="app-version" content="3.3.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F0F2F8;--sf:#fff;--sf2:#F5F6FA;
+  --t1:#1C2340;--t2:#6B7A99;--t3:#9AA3B8;
+  --bd:#DDE2F0;--bd2:#C5CFEA;
+  --blue:#4F6EF7;--bbg:#EEF2FF;--blue2:#3A5AE8;--blt:#C5D5FF;
+  --green:#1E8449;--gbg:#EAFAF1;--gbd:#A9DFBF;
+  --red:#C0392B;--rbg:#FFECEC;
+  --amber:#D35400;--abg:#FFF5EE;--abd:#FBBF24;
+  --sug-border:#F39C12;--sug-text:#D35400;--sug-bg:#FFFBEB;
+  --r:8px;--rlg:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Noto Sans TC',sans-serif;background:var(--bg);color:var(--t1);font-size:14px;min-height:100vh;padding:20px 16px 60px}
+.wrap{max-width:1020px;margin:0 auto}
+/* Header */
+.hdr{display:flex;align-items:baseline;gap:10px;margin-bottom:6px}
+.hdr h1{font-size:18px;font-weight:700;color:var(--blue)}
+.hdr span{font-size:12px;color:var(--t2)}
+.hdr a{font-size:12px;color:var(--t2);text-decoration:none;padding:4px 10px;border:1px solid var(--bd);border-radius:20px;margin-left:auto}
+.hdr a:hover{background:var(--sf);color:var(--t1)}
+/* Config bar */
+.cfg-bar{background:var(--sf);border:1px solid var(--bd);border-radius:var(--r);padding:8px 12px;margin-bottom:14px;font-size:11px;display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap}
+.cfg-bar b{color:var(--t2);font-weight:700;white-space:nowrap}
+.cfg-st{color:var(--t3)}.cfg-st.ok{color:var(--green)}.cfg-st.err{color:var(--red)}.cfg-st.warn{color:var(--amber)}
+/* Tabs */
+.tabs{display:flex;gap:6px;margin-bottom:14px}
+.tab{flex:1;padding:9px 6px;border:1.5px solid var(--bd);border-radius:var(--r);background:var(--sf);cursor:pointer;font-size:12px;font-weight:500;color:var(--t2);font-family:'Noto Sans TC',sans-serif;transition:all .12s;text-align:center}
+.tab:hover{border-color:var(--bd2);color:var(--t1)}.tab.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+/* Layout */
+.layout{display:grid;grid-template-columns:1fr 350px;gap:14px;align-items:start}
+@media(max-width:740px){.layout{grid-template-columns:1fr}}
+/* Section */
+.sec{background:var(--sf);border:1px solid var(--bd);border-left:3px solid var(--blue);border-radius:var(--rlg);padding:16px 18px;margin-bottom:10px}
+.sec.opt{border-left-color:var(--bd2)}.sec.late{border-left-color:var(--amber)}
+.sec-hd{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.sn{width:22px;height:22px;border-radius:50%;background:var(--blue);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.sn.o{background:var(--bd2);color:var(--t2)}.sn.a{background:var(--amber)}
+.stitle{font-size:13px;font-weight:700}
+.b-req{font-size:10px;font-weight:700;background:var(--rbg);color:var(--red);padding:2px 7px;border-radius:20px}
+.b-opt{font-size:10px;font-weight:700;background:var(--sf2);color:var(--t3);padding:2px 7px;border-radius:20px}
+.b-late{font-size:10px;font-weight:700;background:var(--abg);color:var(--amber);padding:2px 7px;border-radius:20px}
+/* Fields */
+.field{margin-bottom:11px}.field:last-child{margin-bottom:0}
+.fl{font-size:11px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;display:flex;align-items:center;gap:4px}
+.rs{color:var(--red);font-size:13px;line-height:1}
+input[type=text],input[type=number]{width:100%;padding:7px 10px;border:1.5px solid var(--bd);border-radius:var(--r);font-size:13px;background:var(--sf);color:var(--t1);font-family:'Noto Sans TC',sans-serif;outline:none;transition:border-color .12s}
+input:focus{border-color:var(--blue)}
+/* Chips (sale, score, notes) */
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{padding:5px 11px;border:1.5px solid var(--bd);border-radius:20px;font-size:12px;font-weight:500;cursor:pointer;background:var(--sf);color:var(--t2);font-family:'Noto Sans TC',sans-serif;white-space:nowrap;transition:all .12s;user-select:none}
+.chip:hover{border-color:var(--bd2);color:var(--t1)}.chip.sel{background:var(--blue);color:#fff;border-color:var(--blue)}
+.chip.note.sel{background:var(--bbg);color:var(--blue2);border-color:var(--blue)}
+/* Time grid */
+.tg{display:grid;grid-template-columns:repeat(9,1fr);gap:4px}
+.tc{display:flex;flex-direction:column;gap:3px}
+.th{text-align:center;padding:7px 2px;border:1.5px solid var(--bd);border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;background:var(--sf);color:var(--t1);transition:all .12s;user-select:none}
+.th:hover{border-color:var(--blue);color:var(--blue)}.th.sel{background:var(--blue);color:#fff;border-color:var(--blue)}
+.tm{text-align:center;padding:4px 2px;border:1.5px solid var(--bd);border-radius:6px;font-size:11px;cursor:pointer;background:var(--sf2);color:var(--t3);transition:all .12s;user-select:none}
+.tm:hover{border-color:var(--blue);color:var(--blue)}.tm.sel{background:var(--bbg);color:var(--blue2);border-color:var(--blue);font-weight:700}
+/* Level grid */
+.lv-lbl{font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;margin-top:10px}
+.lv-lbl:first-child{margin-top:0}
+.lv-row{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:4px}
+.lv{padding:7px 14px;border:1.5px solid var(--bd);border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;background:var(--sf);color:var(--t1);transition:all .12s;user-select:none;white-space:nowrap}
+.lv:hover{border-color:var(--blue);color:var(--blue)}
+.lv.sel{background:var(--blue);color:#fff;border-color:var(--blue)}
+.lv.sub{background:var(--bbg);color:var(--blue2);border-color:var(--blt);font-weight:500}
+.lv.sug{border:2px dashed var(--sug-border);color:var(--sug-text);background:var(--sug-bg)}
+.lv.sug.sel{border-style:solid;border-color:var(--blue);background:var(--blue);color:#fff}
+.lv.sug.sub{border-style:solid;border-color:var(--blt);background:var(--bbg);color:var(--blue2)}
+.lv.rare{color:var(--t3);border-style:dashed}.lv.rare:hover{border-style:solid}
+.lv-hint{font-size:11px;color:var(--blue);margin-top:6px;min-height:16px}
+/* Toggle */
+.tog-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.tog{position:relative;width:34px;height:18px;flex-shrink:0}
+.tog input{opacity:0;width:0;height:0;position:absolute}
+.tsl{position:absolute;inset:0;background:var(--bd2);border-radius:9px;cursor:pointer;transition:.2s}
+.tsl:before{content:"";position:absolute;width:12px;height:12px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+input:checked+.tsl{background:var(--blue)}
+input:checked+.tsl:before{transform:translateX(16px)}
+.tlab{font-size:13px;color:var(--t1)}
+/* Notes */
+.note-sec{margin-top:8px}
+.note-cat{font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.note-chips{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}
+.row2{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.a-btn{padding:5px 10px;border:1.5px solid var(--gbd);border-radius:20px;font-size:11px;font-weight:700;cursor:pointer;background:transparent;color:var(--green);font-family:'Noto Sans TC',sans-serif}
+.a-btn:hover{background:var(--gbg)}
+.c-btn{padding:5px 10px;border:1.5px solid var(--bd);border-radius:20px;font-size:11px;cursor:pointer;background:transparent;color:var(--t3);font-family:'Noto Sans TC',sans-serif}
+/* Late chips */
+.late-chip{padding:6px 12px;border:1.5px solid var(--bd);border-radius:20px;font-size:12px;font-weight:500;cursor:pointer;background:var(--sf);color:var(--t2);font-family:'Noto Sans TC',sans-serif;transition:all .12s;user-select:none;white-space:nowrap}
+.late-chip:hover{border-color:var(--bd2);color:var(--t1)}.late-chip.sel{background:var(--amber);color:#fff;border-color:var(--amber)}
+/* Preview panel */
+.prev-panel{background:var(--sf);border:1px solid var(--bd);border-radius:var(--rlg);padding:16px;position:sticky;top:16px}
+.ptitle{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--t3);margin-bottom:8px}
+.rc-list{display:flex;flex-direction:column;gap:3px;margin-bottom:12px}
+.rc{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--t3)}
+.rc.done{color:var(--t1)}.rc-dot{width:7px;height:7px;border-radius:50%;background:var(--bd);flex-shrink:0;transition:background .2s}
+.rc.done .rc-dot{background:var(--blue)}
+/* Textareas (preview + late) */
+textarea.out{width:100%;background:var(--sf2);border:1.5px solid var(--bd);border-radius:var(--r);padding:12px;font-size:12.5px;font-family:'JetBrains Mono',monospace;line-height:1.85;color:var(--t1);resize:vertical;outline:none;min-height:160px;transition:border-color .12s}
+textarea.out:focus{border-color:var(--blue)}
+textarea.out.late-out{min-height:56px;resize:vertical}
+.copy-btn{width:100%;margin-top:8px;padding:10px;border:1.5px solid var(--blue);border-radius:var(--r);background:var(--blue);color:#fff;cursor:pointer;font-size:14px;font-weight:700;font-family:'Noto Sans TC',sans-serif;transition:all .12s}
+.copy-btn:hover:not(:disabled){background:var(--blue2)}.copy-btn:disabled{opacity:.35;cursor:not-allowed}.copy-btn.ok{background:var(--green);border-color:var(--green)}
+.late-copy{width:100%;margin-top:8px;padding:8px;border:1.5px solid var(--amber);border-radius:var(--r);background:transparent;cursor:pointer;font-size:13px;font-weight:700;color:var(--amber);font-family:'Noto Sans TC',sans-serif;transition:all .12s}
+.late-copy:hover{background:var(--abg)}.late-copy.ok{background:var(--amber);color:#fff}
+.hint{font-size:11px;color:var(--blue);margin-top:4px;display:none}.hint.show{display:block}
+/* Toast error */
+@keyframes toast-in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes toast-out{from{opacity:1}to{opacity:0}}
+.err-toast{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:var(--red);background:var(--rbg);border:1px solid #F5B7B1;border-radius:6px;padding:4px 10px;margin-left:8px;animation:toast-in .18s ease-out}
+.err-toast.hiding{animation:toast-out .3s ease-out forwards}
+/* Loading overlay */
+.loading-overlay{position:fixed;inset:0;background:rgba(240,242,248,.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;backdrop-filter:blur(2px)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-spinner{width:38px;height:38px;border:3px solid var(--bd2);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite}
+.loading-text{font-size:13px;color:var(--t2);font-weight:500}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="hdr"><h1 id="hdr-main">ETalking</h1><span id="hdr-sub">請老師 Demo 通知模板產生器</span><span id="hdr-ver" style="font-size:11px;color:var(--t3);margin-left:4px"></span></div>
+
+<div class="cfg-bar">
+  <b>名單來源</b>
+  <span class="cfg-st" id="cfg-st">載入中…</span>
+</div>
+
+<div class="tabs">
+  <button class="tab active" data-mode="kids">🧒 幼稚園 &amp; 國小（4–12歲）</button>
+  <button class="tab" data-mode="teen">👦 青少年（13–17歲）</button>
+  <button class="tab" data-mode="adult">👩 中師 / 成人</button>
+</div>
+
+<div class="layout">
+<div id="form-col">
+
+<!-- ① 基本資訊 -->
+<div class="sec">
+  <div class="sec-hd"><div class="sn">1</div><span class="stitle">基本資訊</span><span class="b-req">必填</span></div>
+  <div class="field">
+    <div class="fl"><span class="rs">★</span> 業務</div>
+    <div class="chips" id="c-sale" style="margin-bottom:6px"></div>
+    <input type="text" id="i-sale" placeholder="或直接輸入姓名">
+  </div>
+  <div class="field">
+    <div class="fl"><span class="rs">★</span> 時間</div>
+    <div class="tg" id="tg"></div>
+    <div style="font-size:11px;color:var(--t3);margin-top:4px">整點 = 主選 ｜ :30 = 附加選填（整點保持高亮）</div>
+  </div>
+  <div class="field">
+    <div class="fl"><span class="rs">★</span> 教室編號</div>
+    <input type="text" id="i-room" placeholder="如 0854066">
+  </div>
+</div>
+
+<!-- ② 學生/成人 -->
+<div class="sec">
+  <div class="sec-hd"><div class="sn">2</div><span class="stitle" id="s2title">學生資訊</span><span class="b-req">必填</span></div>
+
+  <div id="kids-s2">
+    <div class="field"><div class="fl"><span class="rs">★</span> 學生姓名</div><input type="text" id="i-name" placeholder="如 Queenie"></div>
+    <div class="field">
+      <div class="fl"><span class="rs">★</span> 年齡</div>
+      <input type="number" id="i-age" placeholder="4–12" min="4" max="12" style="max-width:180px">
+      <div class="hint" id="age-hint">💡 黃虛線 = 根據年齡建議的程度</div>
+    </div>
+    <div class="field">
+      <div class="fl">Demo / 摺紙</div>
+      <div class="tog-row">
+        <label class="tog"><input type="checkbox" id="tog-demo" checked><span class="tsl"></span></label><span class="tlab">Demo</span>
+        <label class="tog" style="margin-left:6px"><input type="checkbox" id="tog-origami"><span class="tsl"></span></label><span class="tlab">摺紙</span>
+        <span id="origami-hint" style="font-size:11px;color:var(--sug-text);display:none">（4–7歲已自動勾選）</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="teen-s2" style="display:none">
+    <div class="field"><div class="fl"><span class="rs">★</span> 學生姓名</div><input type="text" id="i-name-teen" placeholder="如 Elisa"></div>
+    <div class="field">
+      <div class="fl"><span class="rs">★</span> 年齡</div>
+      <input type="number" id="i-age-teen" placeholder="13–17" min="13" max="17" style="max-width:180px">
+      <div class="hint" id="age-hint-teen">💡 黃虛線 = 根據年齡建議的程度</div>
+    </div>
+  </div>
+
+  <div id="adult-s2" style="display:none">
+    <div class="field">
+      <div class="fl"><span class="rs">★</span> 筆試成績</div>
+      <div class="chips" id="c-score" style="margin-bottom:6px"></div>
+      <input type="text" id="i-score" placeholder="輸入分數" style="max-width:180px">
+    </div>
+    <div class="field"><div class="fl">老師指定</div><div class="chips" id="c-tpref"></div></div>
+  </div>
+</div>
+
+<!-- ③ 程度 -->
+<div class="sec" id="sec-level">
+  <div class="sec-hd"><div class="sn">3</div><span class="stitle">程度選擇</span><span class="b-req">必填</span></div>
+
+  <div id="kids-s3">
+    <div class="lv-lbl"><span class="rs" style="font-size:11px">★</span> 基礎類別（必選一）</div>
+    <div class="lv-row" id="lv-type"></div>
+    <div class="lv-lbl" style="margin-top:8px"><span class="rs" style="font-size:11px">★</span> 等級（L1–L6）</div>
+    <div class="lv-row" id="lv-num"></div>
+    <div class="lv-hint" id="lv-hint"></div>
+  </div>
+
+  <div id="teen-s3" style="display:none">
+    <div class="lv-lbl" style="color:var(--blue);font-weight:700">Junior 類別（已固定）</div>
+    <div class="lv-row"><div class="lv sel" style="cursor:default">Jr.</div></div>
+    <div class="lv-lbl"><span class="rs" style="font-size:11px">★</span> 等級（L1–L6）</div>
+    <div class="lv-row" id="lv-tnum"></div>
+    <div class="lv-hint" id="lv-thint"></div>
+  </div>
+</div>
+
+<!-- ④ 注意事項 -->
+<div class="sec opt" id="sec-notes">
+  <div class="sec-hd"><div class="sn o">4</div><span class="stitle">請老師注意事項</span><span class="b-opt">選填</span><a href="admin.html" style="margin-left:auto;font-size:11px;color:var(--t2);text-decoration:none;padding:3px 9px;border:1px solid var(--bd);border-radius:20px;white-space:nowrap">⚙️ 維護設定</a></div>
+  <div id="kids-s4">
+    <div class="row2">
+      <button class="a-btn" id="btn-auto-kids">✦ 根據程度自動建議</button>
+      <button class="c-btn" id="btn-clr-kids">清除</button>
+    </div>
+    <div id="notes-kids-wrap"></div>
+  </div>
+  <div id="teen-s4" style="display:none">
+    <div class="row2">
+      <button class="a-btn" id="btn-auto-teen">✦ 根據程度自動建議</button>
+      <button class="c-btn" id="btn-clr-teen">清除</button>
+    </div>
+    <div id="notes-teen-wrap"></div>
+  </div>
+  <div id="adult-s4" style="display:none">
+    <div class="chips" id="c-notes-adult"></div>
+  </div>
+</div>
+
+</div><!-- /form-col -->
+
+<!-- Right column: preview + late notice stacked (whole column sticky) -->
+<div style="display:flex;flex-direction:column;gap:10px;align-items:stretch;position:sticky;top:16px;align-self:start;max-height:calc(100vh - 32px);overflow-y:auto">
+
+<div class="prev-panel" style="position:relative;flex-shrink:0">
+  <div class="ptitle">必填進度</div>
+  <div class="rc-list" id="rc-list"></div>
+  <div class="ptitle">預覽訊息</div>
+  <textarea class="out" id="preview" spellcheck="false">（請完成必填欄位）</textarea>
+  <button class="copy-btn" id="copy-btn" disabled>複製訊息</button>
+</div>
+
+<!-- ⑤ 遲到通知 -->
+<div class="sec late opt" style="margin-top:10px;margin-bottom:0">
+  <div class="sec-hd"><div class="sn a">5</div><span class="stitle">客戶遲到通知</span><span class="b-late">獨立模板</span></div>
+  <div style="font-size:11px;color:var(--t2);margin-bottom:10px">時間與姓名自動帶入</div>
+  <div class="field">
+    <div class="fl">出席狀態</div>
+    <div class="chips" id="late-status"></div>
+  </div>
+  <!-- 遲到說明（出席/待確認時顯示）-->
+  <div id="late-desc-row">
+    <div class="field">
+      <div class="fl">說明</div>
+      <div class="chips" id="late-desc-prefix"></div>
+    </div>
+    <div class="field">
+      <div class="fl">等待時間</div>
+      <div class="chips" id="late-desc-time"></div>
+    </div>
+  </div>
+  <!-- 改約原因（改約時顯示）-->
+  <div class="field" id="late-reschedule-row" style="display:none">
+    <div class="fl">改約原因</div>
+    <div class="chips" id="late-reason"></div>
+    <input type="text" id="late-custom" placeholder="或自填原因…" style="margin-top:6px;font-size:12px;padding:5px 9px">
+  </div>
+  <textarea class="out late-out" id="late-out" spellcheck="false"></textarea>
+  <button class="late-copy" id="late-copy">複製遲到通知</button>
+</div>
+
+<!-- ⑥ IT環境測試改約 -->
+<div class="sec opt" style="border-left-color:var(--green);margin-bottom:0" id="it-env-card">
+  <div class="sec-hd"><div class="sn" style="background:var(--green)">6</div><span class="stitle">IT 環境測試 狀況通報</span><span style="font-size:10px;font-weight:700;background:var(--gbg);color:var(--green);padding:2px 7px;border-radius:20px;margin-left:2px">獨立模板</span></div>
+
+  <!-- 日期 -->
+  <div class="field">
+    <div class="fl">日期</div>
+    <div class="chips" id="it-date-chips"></div>
+    <input type="date" id="it-date-custom" style="display:none;margin-top:6px;width:100%;padding:6px 9px;border:1.5px solid var(--bd);border-radius:var(--r);font-size:13px;background:var(--sf);color:var(--t1);outline:none">
+  </div>
+
+  <!-- 時間 -->
+  <div class="field">
+    <div class="fl">時間</div>
+    <div id="it-tg" style="display:flex;flex-wrap:wrap;gap:4px"></div>
+  </div>
+
+  <!-- 學生姓名/身分證（選填） -->
+  <div class="field">
+    <div class="fl" style="cursor:pointer" id="it-student-toggle-row">
+      <label class="tog" style="cursor:pointer"><input type="checkbox" id="it-tog-student"><span class="tsl"></span></label>
+      <span class="tlab" style="font-size:11px;font-weight:700;color:var(--t2)">學生姓名 / 身分證字號</span>
+      <span style="font-size:10px;font-weight:700;background:var(--sf2);color:var(--t3);padding:2px 7px;border-radius:20px">選填</span>
+    </div>
+    <div id="it-student-row" style="display:none;margin-top:6px;display:none;flex-direction:column;gap:5px">
+      <input type="text" id="it-name" placeholder="學生姓名">
+      <input type="text" id="it-id" placeholder="身分證字號（可不填）">
+    </div>
+  </div>
+
+  <!-- 狀態 -->
+  <div class="field">
+    <div class="fl">狀態</div>
+    <div class="chips" id="it-status-chips"></div>
+  </div>
+
+  <!-- 後續 Action（選填） -->
+  <div class="field">
+    <div class="fl" style="cursor:pointer">
+      <label class="tog" style="cursor:pointer"><input type="checkbox" id="it-tog-followup"><span class="tsl"></span></label>
+      <span class="tlab" style="font-size:11px;font-weight:700;color:var(--t2)">後續 Action</span>
+      <span style="font-size:10px;font-weight:700;background:var(--sf2);color:var(--t3);padding:2px 7px;border-radius:20px">選填</span>
+    </div>
+    <div id="it-followup-row" style="display:none;margin-top:8px">
+      <div class="chips" id="it-followup-type" style="margin-bottom:8px"></div>
+      <div id="it-followup-dt" style="display:none">
+        <div style="font-size:10px;font-weight:700;color:var(--t3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em">改約日期</div>
+        <div class="chips" id="it-fu-date-chips" style="margin-bottom:6px"></div>
+        <input type="date" id="it-fu-date-custom" style="display:none;margin-bottom:8px;width:100%;padding:6px 9px;border:1.5px solid var(--bd);border-radius:var(--r);font-size:13px;background:var(--sf);color:var(--t1);outline:none">
+        <div style="font-size:10px;font-weight:700;color:var(--t3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em">改約時間</div>
+        <div id="it-fu-tg" style="display:flex;flex-wrap:wrap;gap:4px"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 結語 -->
+  <div class="field">
+    <div class="fl">結語</div>
+    <div class="chips" id="it-closing-chips"></div>
+    <input type="text" id="it-closing-custom" placeholder="自填結語…" style="margin-top:6px;font-size:12px;padding:5px 9px;width:100%;border:1.5px solid var(--bd);border-radius:var(--r);background:var(--sf);color:var(--t1);outline:none;display:none">
+  </div>
+
+  <textarea class="out late-out" id="it-out" spellcheck="false" style="min-height:80px"></textarea>
+  <button class="late-copy" id="it-copy" style="border-color:var(--green);color:var(--green)">複製 IT 改約通知</button>
+</div>
+
+</div><!-- /right-col -->
+
+</div><!-- /layout -->
+</div>
+
+<script>
+/* ══════════════════════════════════════════════
+   Version — 單一來源
+══════════════════════════════════════════════ */
+var APP_VERSION = '3.3.0';
+var APP_TITLE_MAIN = 'ETalking';
+var APP_TITLE_SUB = '請老師 Demo 通知模板產生器';
+// 注入 <title> 與頁首副標（若存在）
+document.title = APP_TITLE_MAIN + ' · ' + APP_TITLE_SUB + ' v' + APP_VERSION;
+
+/* ══════════════════════════════════════════════
+   Loading overlay
+══════════════════════════════════════════════ */
+var _loadingEl=null;
+function showLoading(msg){
+  if(!_loadingEl){
+    _loadingEl=document.createElement('div');
+    _loadingEl.className='loading-overlay';
+    _loadingEl.innerHTML='<div class="loading-spinner"></div><div class="loading-text"></div>';
+    document.body.appendChild(_loadingEl);
+  }
+  _loadingEl.querySelector('.loading-text').textContent=msg||'載入中…';
+  _loadingEl.style.display='flex';
+}
+function hideLoading(){
+  if(_loadingEl)_loadingEl.style.display='none';
+}
+
+/* ══════════════════════════════════════════════
+   Toast error helper
+══════════════════════════════════════════════ */
+function showToast(anchorEl,msg){
+  // Remove any existing toast near this anchor
+  var existing=anchorEl.parentNode.querySelector('.err-toast');
+  if(existing)existing.remove();
+  var toast=document.createElement('span');
+  toast.className='err-toast';
+  toast.textContent='⚠ '+msg;
+  anchorEl.insertAdjacentElement('afterend',toast);
+  setTimeout(function(){
+    toast.classList.add('hiding');
+    setTimeout(function(){if(toast.parentNode)toast.remove();},320);
+  },2200);
+}
+
+/* ══════════════════════════════════════════════
+   Default data (overridden by config.json)
+══════════════════════════════════════════════ */
+var SALES = [];
+var DEFAULT_TIME = '15:00';
+var L_NUMS = ['L1','L2','L3','L4','L5','L6'];
+var L_RARE = ['L4','L5','L6'];
+
+var NOTE_CATS_KIDS = [
+  {cat:'教學風格',items:['活潑生動','親切溫和','放慢速度']},
+  {cat:'互動引導',items:['多對話多互動','多用動作表情引導','多手勢引導','引導孩子多表達']},
+  {cat:'語言目標',items:['引導說完整句子','糾正發音','鼓勵說英文','延伸話題']},
+  {cat:'獎勵激勵',items:['多鼓勵','多給星星或金幣']},
+  {cat:'老師偏好',items:['女老師']},
+];
+var NOTES_ADULT_ITEMS = ['多引導及糾正','必要時以中文輔助','多糾正發音','不指定老師'];
+var LATE_STATUS_OPTS = ['會出席','待確認','改約'];
+var LATE_DESC_OPTS   = ['請稍等','5~10分鐘','10~15分鐘'];
+var LATE_RESCHEDULE_OPTS  = ['設備問題無法排除','臨時有事'];
+var LATE_DESC_PREFIX_OPTS = ['請稍等'];
+var LATE_DESC_TIME_OPTS   = ['5~10分鐘','10~15分鐘'];
+var TEACHER_PREF = ['中師','不指定'];
+var NOTE_CATS_TEEN = [
+  {cat:'語言目標',items:['引導說完整句子','多多糾正','糾正發音','延伸話題','鼓勵說英文']},
+  {cat:'教學引導',items:['多引導多互動','放慢速度','活潑生動']},
+];
+var LEVEL_AUTO = {
+  /* ── 純 Type ── */
+  'Prestarter':              ['活潑生動','放慢速度','多手勢引導','多給星星或金幣','多鼓勵'],
+  'Prestarter-Starter':      ['活潑生動','放慢速度','多對話多互動','多給星星或金幣','多鼓勵'],
+  'Starter':                 ['活潑生動','多對話多互動','多鼓勵','多給星星或金幣'],
+  /* ── Prestarter + L ── */
+  'Prestarter-L1':           ['活潑生動','放慢速度','引導說完整句子','糾正發音','多鼓勵'],
+  'Prestarter-L1-L2':        ['活潑生動','放慢速度','引導說完整句子','糾正發音','多鼓勵'],
+  'Prestarter-L2':           ['放慢速度','引導說完整句子','糾正發音','延伸話題'],
+  'Prestarter-L2-L3':        ['放慢速度','引導說完整句子','糾正發音','延伸話題'],
+  'Prestarter-L3':           ['引導說完整句子','糾正發音','延伸話題'],
+  /* ── Prestarter~Starter + L ── */
+  'Prestarter-Starter-L1':   ['活潑生動','引導說完整句子','糾正發音','多鼓勵'],
+  'Prestarter-Starter-L1-L2':['活潑生動','引導說完整句子','糾正發音','延伸話題'],
+  'Prestarter-Starter-L2':   ['引導說完整句子','糾正發音','延伸話題'],
+  /* ── Starter + L ── */
+  'Starter-L1':              ['活潑生動','多對話多互動','引導說完整句子','糾正發音','多鼓勵'],
+  'Starter-L1-L2':           ['活潑生動','引導說完整句子','糾正發音','延伸話題'],
+  'Starter-L2':              ['引導說完整句子','糾正發音','延伸話題'],
+  'Starter-L2-L3':           ['引導說完整句子','糾正發音','延伸話題'],
+  'Starter-L3':              ['引導說完整句子','糾正發音','延伸話題'],
+  /* ── 純 L ── */
+  'L1':                      ['引導說完整句子','糾正發音','活潑生動'],
+  'L1-L2':                   ['引導說完整句子','糾正發音','延伸話題'],
+  'L2':                      ['引導說完整句子','糾正發音','延伸話題'],
+  'L2-L3':                   ['引導說完整句子','糾正發音','延伸話題'],
+  'L3':                      ['引導說完整句子','糾正發音','延伸話題'],
+  'L3-L4':                   ['引導說完整句子','糾正發音','延伸話題'],
+};
+/* fallback: if exact key missing, try typeOnly then numOnly */
+function lookupAuto(map, lv){
+  if(map[lv])return map[lv];
+  /* try stripping numStr or typeStr */
+  var parts=lv.split('-');
+  /* typeOnly = up to first L or Junior */
+  var tEnd=parts.findIndex(function(p){return p==='L1'||p==='L2'||p==='L3'||p==='L4'||p==='L5'||p==='L6'||p==='Junior';});
+  if(tEnd>0){
+    var typeOnly=parts.slice(0,tEnd).join('-');
+    var numOnly=parts.slice(tEnd).join('-');
+    if(map[typeOnly])return map[typeOnly];
+    if(map[numOnly])return map[numOnly];
+  }
+  return null;
+}
+var LEVEL_AUTO_TEEN = {
+  'Junior-L1':['引導說完整句子','多多糾正'],
+  'Junior-L1-L2':['引導說完整句子','多多糾正','糾正發音'],
+  'Junior-L2':['引導說完整句子','糾正發音','延伸話題'],
+  'Junior-L2-L3':['引導說完整句子','糾正發音','延伸話題'],
+  'Junior-L3':['糾正發音','延伸話題','鼓勵說英文'],
+};
+
+var KIDS_TYPE_SUG = {4:['Pre'],5:['Pre'],6:['Pre','Star'],7:['Star'],8:['Star'],9:['Star'],10:['Star'],11:['L1'],12:['L1','L2']};
+var TEEN_NUM_SUG  = {13:['L1'],14:['L1','L2'],15:['L2','L3'],16:['L3'],17:['L3','L4']};
+
+/* ══════════════════════════════════════════════
+   State
+══════════════════════════════════════════════ */
+var mode = 'kids';
+var st = {
+  sale:'', time:DEFAULT_TIME,
+  /* kids */
+  name:'', age:'',
+  kTM:'', kTS:'',   // type main/sub: 'Pre'|'Star'
+  kNM:'', kNS:'',   // num  main/sub: 'L1'..'L6'
+  notes_kids:[],
+  /* teen */
+  name_teen:'', age_teen:'',
+  tNM:'', tNS:'',
+  notes_teen:[],
+  /* adult */
+  score:'', tpref:'中師', notes_adult:[],
+  /* late */
+  lStatus:'會出席', lDescPrefix:'請稍等', lDescTime:'', lReason:'', lCustom:''
+};
+
+/* ══════════════════════════════════════════════
+   Level computation
+   Output: typeStr + (numStr ? '-' + numStr : '')
+══════════════════════════════════════════════ */
+function computeLevel(){
+  if(mode==='kids'){
+    var typeStr='';
+    if(st.kTM==='Pre'&&st.kTS==='Star')      typeStr='Prestarter-Starter';
+    else if(st.kTM==='Pre')                    typeStr='Prestarter';
+    else if(st.kTM==='Star')                   typeStr='Starter';
+    var numStr=st.kNM?(st.kNM+(st.kNS?'-'+st.kNS:'')):'';
+    if(!typeStr&&!numStr)return'';
+    if(!typeStr)return numStr;
+    if(!numStr)return typeStr;
+    return typeStr+'-'+numStr;
+  }
+  if(mode==='teen'){
+    if(!st.tNM)return'';
+    return'Junior-'+st.tNM+(st.tNS?'-'+st.tNS:'');
+  }
+  return'';
+}
+
+/* ══════════════════════════════════════════════
+   Time grid
+══════════════════════════════════════════════ */
+function buildTimeGrid(){
+  var g=document.getElementById('tg');g.innerHTML='';
+  for(var h=13;h<=21;h++){
+    var col=document.createElement('div');col.className='tc';
+    var bh=document.createElement('div');bh.className='th';bh.textContent=h;bh.dataset.h=h;
+    bh.addEventListener('click',(function(hh){return function(){
+      var curH=st.time?parseInt(st.time):0;
+      st.time=curH===hh?'':hh+':00';
+      refreshTG();render();
+    };})(h));
+    col.appendChild(bh);
+    if(h<=21){
+      var bm=document.createElement('div');bm.className='tm';bm.textContent=':30';bm.dataset.h=h;
+      bm.addEventListener('click',(function(hh){return function(){
+        var curH=st.time?parseInt(st.time):0,isHalf=st.time&&st.time.endsWith(':30');
+        if(curH===hh&&isHalf){st.time=hh+':00';}
+        else{st.time=hh+':30';}
+        refreshTG();render();
+      };})(h));
+      col.appendChild(bm);
+    }
+    g.appendChild(col);
+  }
+}
+function refreshTG(){
+  var curH=st.time?parseInt(st.time):0;
+  var half=st.time&&st.time.endsWith(':30');
+  document.querySelectorAll('.th').forEach(function(b){b.classList.toggle('sel',parseInt(b.dataset.h)===curH&&curH>0);});
+  document.querySelectorAll('.tm').forEach(function(b){b.classList.toggle('sel',half&&parseInt(b.dataset.h)===curH);});
+}
+
+/* ══════════════════════════════════════════════
+   Level grids
+══════════════════════════════════════════════ */
+function buildKidsLevel(){
+  // Type row
+  var tRow=document.getElementById('lv-type');tRow.innerHTML='';
+  [{label:'Pre',val:'Pre'},{label:'Star',val:'Star'}].forEach(function(item){
+    var b=document.createElement('div');b.className='lv';b.textContent=item.label;b.dataset.val=item.val;
+    b.addEventListener('click',function(){clickKT(item.val);});
+    tRow.appendChild(b);
+  });
+  // Num row
+  var nRow=document.getElementById('lv-num');nRow.innerHTML='';
+  L_NUMS.forEach(function(l){
+    var b=document.createElement('div');b.className='lv'+(L_RARE.indexOf(l)>=0?' rare':'');b.textContent=l;b.dataset.val=l;
+    b.addEventListener('click',function(){clickKN(l);});
+    nRow.appendChild(b);
+  });
+  refreshKL();
+}
+
+function clickKT(val){
+  var order=['Pre','Star'];
+  var im=order.indexOf(st.kTM), iv=order.indexOf(val);
+  if(val===st.kTM){
+    if(st.kTS){st.kTS='';}
+    else{st.kTM='';}
+  } else if(val===st.kTS){
+    st.kTS='';
+  } else if(st.kTM===''){
+    st.kTM=val;
+  } else if(Math.abs(im-iv)===1){
+    st.kTM=order[Math.min(im,iv)];
+    st.kTS=order[Math.max(im,iv)];
+  } else {
+    st.kTM=val; st.kTS='';
+  }
+  refreshKL();render();
+}
+
+function clickKN(val){
+  var im=L_NUMS.indexOf(st.kNM),iv=L_NUMS.indexOf(val);
+  if(val===st.kNM){
+    if(st.kNS){st.kNS='';}else{st.kNM='';}              // has sub: clear sub; no sub: deselect
+  } else if(val===st.kNS){
+    st.kNS='';                                            // deselect sub
+  } else if(st.kNM===''){
+    st.kNM=val;                                           // fresh select
+  } else if(Math.abs(im-iv)===1){
+    var lo=L_NUMS[Math.min(im,iv)],hi=L_NUMS[Math.max(im,iv)];
+    st.kNM=lo;st.kNS=hi;                                 // adjacent → transition
+  } else {
+    st.kNM=val;st.kNS='';                                // non-adjacent → replace
+  }
+  refreshKL();render();
+}
+
+function refreshKL(){
+  var age=parseInt(document.getElementById('i-age').value)||0;
+  var tSug=KIDS_TYPE_SUG[age]||[];
+  document.querySelectorAll('#lv-type .lv').forEach(function(b){
+    var v=b.dataset.val,isSel=v===st.kTM,isSub=v===st.kTS,isSug=tSug.indexOf(v)>=0&&!isSel&&!isSub;
+    b.className='lv'+(isSel?' sel':isSub?' sub':'')+(isSug?' sug':'');
+  });
+  document.querySelectorAll('#lv-num .lv').forEach(function(b){
+    var v=b.dataset.val,isSel=v===st.kNM,isSub=v===st.kNS,isRare=L_RARE.indexOf(v)>=0;
+    b.className='lv'+(isRare?' rare':'')+(isSel?' sel':isSub?' sub':'');
+  });
+  var lv=computeLevel();
+  document.getElementById('lv-hint').textContent=lv?'目前程度：'+lv:'';
+}
+
+function buildTeenLevel(){
+  var nRow=document.getElementById('lv-tnum');nRow.innerHTML='';
+  L_NUMS.forEach(function(l){
+    var b=document.createElement('div');b.className='lv'+(L_RARE.indexOf(l)>=0?' rare':'');b.textContent=l;b.dataset.val=l;
+    b.addEventListener('click',function(){clickTN(l);});
+    nRow.appendChild(b);
+  });
+  refreshTL();
+}
+
+function clickTN(val){
+  var im=L_NUMS.indexOf(st.tNM),iv=L_NUMS.indexOf(val);
+  if(val===st.tNM){if(st.tNS){st.tNS='';}else{st.tNM='';}}
+  else if(val===st.tNS){st.tNS='';}
+  else if(st.tNM===''){st.tNM=val;}
+  else if(Math.abs(im-iv)===1){st.tNM=L_NUMS[Math.min(im,iv)];st.tNS=L_NUMS[Math.max(im,iv)];}
+  else{st.tNM=val;st.tNS='';}
+  refreshTL();render();
+}
+
+function refreshTL(){
+  var age=parseInt(document.getElementById('i-age-teen').value)||0;
+  var nSug=TEEN_NUM_SUG[age]||[];
+  document.querySelectorAll('#lv-tnum .lv').forEach(function(b){
+    var v=b.dataset.val,isSel=v===st.tNM,isSub=v===st.tNS,isRare=L_RARE.indexOf(v)>=0,isSug=nSug.indexOf(v)>=0&&!isSel&&!isSub;
+    b.className='lv'+(isRare?' rare':'')+(isSel?' sel':isSub?' sub':'')+(isSug?' sug':'');
+  });
+  var lv=computeLevel();
+  document.getElementById('lv-thint').textContent=lv?'目前程度：'+lv:'';
+}
+
+/* ══════════════════════════════════════════════
+   Chips
+══════════════════════════════════════════════ */
+function buildSaleChips(){
+  var c=document.getElementById('c-sale');c.innerHTML='';
+  SALES.forEach(function(name){
+    var b=document.createElement('button');b.className='chip';b.textContent=name;b.dataset.val=name;
+    b.classList.toggle('sel',st.sale===name);
+    b.addEventListener('click',function(){
+      st.sale=st.sale===name?'':name;
+      document.getElementById('i-sale').value=st.sale;
+      c.querySelectorAll('.chip').forEach(function(x){x.classList.toggle('sel',st.sale===x.dataset.val);});
+      render();
+    });
+    c.appendChild(b);
+  });
+  if(typeof applyQueryParams==='function')applyQueryParams('sale');
+}
+function buildSimpleChips(cid,items,key,multi){
+  var c=document.getElementById(cid);if(!c)return;c.innerHTML='';
+  items.forEach(function(item){
+    var b=document.createElement('button');b.className='chip'+(multi?' note':'');b.textContent=item;b.dataset.val=item;
+    var isSel=multi?st[key].indexOf(item)>=0:st[key]===item;if(isSel)b.classList.add('sel');
+    b.addEventListener('click',function(){
+      if(multi){var arr=st[key],i=arr.indexOf(item);if(i>=0)arr.splice(i,1);else arr.push(item);b.classList.toggle('sel',arr.indexOf(item)>=0);}
+      else{st[key]=st[key]===item?'':item;if(key==='score')document.getElementById('i-score').value=st[key];c.querySelectorAll('.chip').forEach(function(x){x.classList.toggle('sel',st[key]===x.dataset.val);});}
+      render();
+    });
+    c.appendChild(b);
+  });
+}
+
+/* ══════════════════════════════════════════════
+   Notes (rebuilt from config data)
+══════════════════════════════════════════════ */
+function buildNotes(wrapId,cats,key){
+  var wrap=document.getElementById(wrapId);if(!wrap)return;
+  if(!Array.isArray(cats)){console.error('[buildNotes] cats is not array',cats);return;}
+  var selected=st[key]||[];
+  wrap.innerHTML='';
+  cats.forEach(function(cat){
+    var g=document.createElement('div');g.className='note-sec';
+    var lbl=document.createElement('div');lbl.className='note-cat';lbl.textContent=cat.cat;g.appendChild(lbl);
+    var row=document.createElement('div');row.className='note-chips';
+    (cat.items||[]).forEach(function(item){
+      var b=document.createElement('button');b.className='chip note';b.textContent=item;
+      b.classList.toggle('sel',selected.indexOf(item)>=0);
+      b.addEventListener('click',function(){
+        var arr=st[key];if(!arr)return;
+        var i=arr.indexOf(item);if(i>=0)arr.splice(i,1);else arr.push(item);
+        b.classList.toggle('sel',arr.indexOf(item)>=0);render();
+      });
+      row.appendChild(b);
+    });
+    g.appendChild(row);wrap.appendChild(g);
+  });
+}
+function autoNotes(lv,map,wrapId,noteKey,cats){
+  st[noteKey]=[].concat(map[lv]||[]);buildNotes(wrapId,cats,noteKey);render();
+}
+function clearNotes(wrapId,noteKey,cats){st[noteKey]=[];buildNotes(wrapId,cats,noteKey);render();}
+
+/* ══════════════════════════════════════════════
+   Late template chips
+══════════════════════════════════════════════ */
+function buildLateRow(cid,key,vals,onPickOrToggle,toggle){
+  // onPickOrToggle: callback fn OR boolean toggle flag
+  var onPick=typeof onPickOrToggle==='function'?onPickOrToggle:null;
+  var canToggle=toggle||(onPickOrToggle===true);
+  var c=document.getElementById(cid);c.innerHTML='';
+  vals.forEach(function(v){
+    var b=document.createElement('div');b.className='chip late-chip';b.textContent=v;b.dataset.val=v;
+    b.classList.toggle('sel',st[key]===v);
+    b.addEventListener('click',function(){
+      st[key]=(canToggle&&st[key]===v)?'':v;   // toggle off if same chip clicked
+      c.querySelectorAll('.chip').forEach(function(x){x.classList.toggle('sel',st[key]===x.dataset.val);});
+      if(onPick)onPick(st[key]);
+      renderLate();
+    });
+    c.appendChild(b);
+  });
+}
+function buildReasonRow(){
+  var cid='late-reason';
+  var c=document.getElementById(cid);if(!c)return;c.innerHTML='';
+  LATE_RESCHEDULE_OPTS.forEach(function(v){
+    var b=document.createElement('div');b.className='chip late-chip';b.textContent=v;b.dataset.val=v;
+    b.classList.toggle('sel',st.lReason===v);
+    b.addEventListener('click',function(){
+      st.lReason=st.lReason===v?'':v;
+      c.querySelectorAll('.chip').forEach(function(x){x.classList.toggle('sel',st.lReason===x.dataset.val);});
+      renderLate();
+    });
+    c.appendChild(b);
+  });
+}
+function onStatusPick(v){
+  var isReschedule=v==='改約';
+  document.getElementById('late-desc-row').style.display=isReschedule?'none':'';
+  document.getElementById('late-reschedule-row').style.display=isReschedule?'':'none';
+  if(isReschedule){st.lReason='';st.lDescPrefix='';st.lDescTime='';buildReasonRow();}
+}
+function renderLate(){
+  var time=st.time||'（時間）';
+  var name=(mode==='kids'?document.getElementById('i-name').value.trim():mode==='teen'?document.getElementById('i-name-teen').value.trim():'')||'（姓名）';
+  var isReschedule=st.lStatus==='改約';
+  if(isReschedule){
+    var custom=(document.getElementById('late-custom')||{}).value||'';
+    var reason=custom.trim()||st.lReason||'';
+    document.getElementById('late-out').value=time+' '+name+' 改約'+(reason?'，'+reason:'');
+  } else {
+    // Combine prefix + time: "請稍等：5~10分鐘" / "請稍等" / "5~10分鐘" / ""
+    var prefix=st.lDescPrefix||'';
+    var tval=st.lDescTime||'';
+    var desc=prefix&&tval?prefix+'：'+tval:prefix||tval;
+    document.getElementById('late-out').value=time+' '+name+(st.lStatus?' '+st.lStatus:'')+(desc?'，'+desc:'');
+  }
+}
+
+/* ══════════════════════════════════════════════
+   Render
+══════════════════════════════════════════════ */
+function getReqItems(){
+  var room=document.getElementById('i-room').value.trim();
+  var lv=computeLevel();
+  if(mode==='kids')return[
+    {l:'業務',v:!!st.sale},{l:'時間',v:!!st.time},{l:'教室編號',v:!!room},
+    {l:'學生姓名',v:!!document.getElementById('i-name').value.trim()},
+    {l:'年齡',v:!!document.getElementById('i-age').value},
+    {l:'程度（類別+等級）',v:!!lv},
+  ];
+  if(mode==='teen')return[
+    {l:'業務',v:!!st.sale},{l:'時間',v:!!st.time},{l:'教室編號',v:!!room},
+    {l:'學生姓名',v:!!document.getElementById('i-name-teen').value.trim()},
+    {l:'年齡',v:!!document.getElementById('i-age-teen').value},
+    {l:'等級',v:!!lv},
+  ];
+  return[{l:'業務',v:!!st.sale},{l:'時間',v:!!st.time},{l:'教室編號',v:!!room},{l:'筆試成績',v:!!st.score}];
+}
+function render(){
+  var room=document.getElementById('i-room').value.trim();
+  var sale=st.sale||'___',time=st.time||'___',r=room||'___',lv=computeLevel()||'___',out='';
+  if(mode==='kids'){
+    var name=document.getElementById('i-name').value.trim()||'___';
+    var age=document.getElementById('i-age').value||'__';
+    var origami=document.getElementById('tog-origami').checked?'，摺紙':'';
+    var ds=document.getElementById('tog-demo').checked?'('+time+' Demo)':'';
+    var notes=st.notes_kids.length?'\n'+st.notes_kids.join(' / '):'';
+    out='業務 : '+sale+'\n時間：'+time+'\n教室編號：'+r+ds+'\n備註：'+name+'，'+age+'y，'+lv+origami+notes;
+  }else if(mode==='teen'){
+    var name2=document.getElementById('i-name-teen').value.trim()||'___';
+    var age2=document.getElementById('i-age-teen').value||'__';
+    var notes2=st.notes_teen.length?'\n'+st.notes_teen.join(' / '):'';
+    out='業務 : '+sale+'\n時間：'+time+'\n教室編號：'+r+'('+time+' Demo)\n備註：'+name2+'，'+age2+'y，'+lv+notes2;
+  }else{
+    var score=st.score||'___';
+    out='業務：'+sale+'\n時間：'+time+'\n教室編號：'+r+'\n筆試成績：'+score+'\n備註：'+[st.tpref].concat(st.notes_adult).join(' / ');
+  }
+  document.getElementById('preview').value=out;
+  renderLate();
+  // req check
+  var items=getReqItems(),allDone=true,rc=document.getElementById('rc-list');
+  rc.innerHTML='';
+  items.forEach(function(it){
+    if(!it.v)allDone=false;
+    var d=document.createElement('div');d.className='rc'+(it.v?' done':'');
+    var dot=document.createElement('div');dot.className='rc-dot';d.appendChild(dot);
+    var sp=document.createElement('span');sp.textContent=it.l;d.appendChild(sp);
+    rc.appendChild(d);
+  });
+  document.getElementById('copy-btn').disabled=!allDone;
+}
+
+/* ══════════════════════════════════════════════
+   Mode switch
+══════════════════════════════════════════════ */
+function setMode(m){
+  mode=m;
+  document.querySelectorAll('.tab').forEach(function(t){t.classList.toggle('active',t.dataset.mode===m);});
+  ['kids','teen','adult'].forEach(function(x){
+    ['s2','s3','s4'].forEach(function(s){var el=document.getElementById(x+'-'+s);if(el)el.style.display=x===m?'':'none';});
+  });
+  document.getElementById('sec-level').style.display=m==='adult'?'none':'';
+  document.getElementById('s2title').textContent=m==='adult'?'成人資訊':'學生資訊';
+  render();
+}
+
+/* ══════════════════════════════════════════════
+   Config loading
+══════════════════════════════════════════════ */
+function setSt(msg,cls){var e=document.getElementById('cfg-st');e.textContent=msg;e.className='cfg-st'+(cls?' '+cls:'');}
+// 快取命中的狀態訊息：保留正常訊息 + 附淡灰「（快取 N 分前）」與「重抓」連結
+function setStCached(msg, ts){
+  var e = document.getElementById('cfg-st');
+  e.className = 'cfg-st ok';
+  e.innerHTML = '';
+  e.appendChild(document.createTextNode('✅ ' + msg + ' '));
+  var tag = document.createElement('span');
+  tag.textContent = '（快取 ' + cacheAgeText(ts) + '）';
+  tag.style.cssText = 'color:var(--t3);font-weight:400;opacity:.7;margin-left:2px';
+  e.appendChild(tag);
+  var link = document.createElement('a');
+  link.href = '?force=1' + window.location.hash;
+  // 保留當前除了 force 之外的所有 query 參數
+  try{
+    var u = new URL(window.location.href);
+    u.searchParams.set('force','1');
+    link.href = u.pathname + u.search + u.hash;
+  }catch(err){}
+  link.textContent = '重抓';
+  link.style.cssText = 'color:var(--t3);font-size:10px;margin-left:6px;text-decoration:underline;cursor:pointer';
+  link.title = '清除快取並重新抓取班表';
+  e.appendChild(link);
+}
+
+function parseSheetUrl(url){
+  var idM=url.match(/\/spreadsheets\/d\/([^\/\?#]+)/),gidM=url.match(/[?&#]gid=(\d+)/);
+  if(!idM)return null;return{id:idM[1],gid:gidM?gidM[1]:'0'};
+}
+function extractNames(txt){
+  var rows=txt.split('\n').map(function(r){return r.split('\t');});
+  var cnRe=/^[\u4e00-\u9fff]{2,5}$/,enRe=/^[A-Za-z]{2,15}$/,names=[];
+  rows.forEach(function(row){
+    if(row.join('').indexOf('12點半')<0)return;
+    for(var i=0;i<row.length-1;i++){
+      var cn=row[i].trim(),en=(row[i+1]||'').trim();
+      if(cnRe.test(cn)&&enRe.test(en)&&cn!=='姓名'&&names.indexOf(en)<0)names.push(en);
+    }
+  });
+  return names;
+}
+
+function applyNotesFromConfig(cfg){
+  if(cfg.notes_kids){
+    if(cfg.notes_kids.categories)NOTE_CATS_KIDS=cfg.notes_kids.categories;
+    if(cfg.notes_kids.auto_suggest)LEVEL_AUTO=cfg.notes_kids.auto_suggest;
+  }
+  if(cfg.notes_teen){
+    if(cfg.notes_teen.categories)NOTE_CATS_TEEN=cfg.notes_teen.categories;
+    if(cfg.notes_teen.auto_suggest)LEVEL_AUTO_TEEN=cfg.notes_teen.auto_suggest;
+  }
+  if(cfg.notes_adult){
+    if(cfg.notes_adult.items&&cfg.notes_adult.items.length)NOTES_ADULT_ITEMS=cfg.notes_adult.items;
+    if(cfg.notes_adult.teacher_pref&&cfg.notes_adult.teacher_pref.length)TEACHER_PREF=cfg.notes_adult.teacher_pref;
+  }
+  if(cfg.late_notification){
+    if(cfg.late_notification.status_opts&&cfg.late_notification.status_opts.length)
+      LATE_STATUS_OPTS=cfg.late_notification.status_opts;
+    if(cfg.late_notification.desc_prefix_opts&&cfg.late_notification.desc_prefix_opts.length)
+      LATE_DESC_PREFIX_OPTS=cfg.late_notification.desc_prefix_opts;
+    if(cfg.late_notification.desc_time_opts&&cfg.late_notification.desc_time_opts.length)
+      LATE_DESC_TIME_OPTS=cfg.late_notification.desc_time_opts;
+    if(cfg.late_notification.reschedule_opts&&cfg.late_notification.reschedule_opts.length)
+      LATE_RESCHEDULE_OPTS=cfg.late_notification.reschedule_opts;
+  }
+  buildNotes('notes-kids-wrap',NOTE_CATS_KIDS,'notes_kids');
+  buildNotes('notes-teen-wrap',NOTE_CATS_TEEN,'notes_teen');
+  buildSimpleChips('c-notes-adult',NOTES_ADULT_ITEMS,'notes_adult',true);
+  buildSimpleChips('c-tpref',TEACHER_PREF,'tpref',false);
+  document.getElementById('c-tpref').querySelectorAll('.chip').forEach(function(b){b.classList.toggle('sel',st.tpref===b.dataset.val);});
+  buildLateRow('late-status','lStatus',LATE_STATUS_OPTS,onStatusPick);
+  buildLateRow('late-desc-prefix','lDescPrefix',LATE_DESC_PREFIX_OPTS,true);
+  buildLateRow('late-desc-time','lDescTime',LATE_DESC_TIME_OPTS,true);
+  buildReasonRow();
+}
+
+function trySheets(url,fallbackSales){
+  var parsed=parseSheetUrl(url);
+  if(!parsed){setSt('班表 URL 格式有誤，使用 config.sales','warn');SALES=fallbackSales||[];buildSaleChips();hideLoading();return;}
+  setSt('⏳ 從班表抓取業務名單…','');
+  showLoading('正在讀取班表業務名單…');
+  var csvUrl='https://docs.google.com/spreadsheets/d/'+parsed.id+'/export?format=tsv&gid='+parsed.gid+'&t='+Date.now();
+  fetch(csvUrl,{cache:'no-store'})
+    .then(function(r){if(!r.ok)throw r.status;return r.text();})
+    .then(function(txt){
+      var names=extractNames(txt);
+      if(!names.length)throw '解析為空';
+      SALES=names;buildSaleChips();
+      setSt('✅ 班表（'+names.length+' 位：'+names.join('、')+'）','ok');
+      cacheWrite({config: window.__lastConfig || null, sales: names});
+    })
+    .catch(function(e){
+      if(fallbackSales&&fallbackSales.length){
+        SALES=fallbackSales;buildSaleChips();
+        setSt('⚠️ 班表抓取失敗（'+e+'），改用 config.sales','warn');
+      } else {
+        setSt('⚠️ 班表抓取失敗（'+e+'），config.sales 亦無資料','err');
+      }
+    })
+    .finally(function(){hideLoading();});
+}
+
+/* ══════════════════════════════════════════════
+   URL 參數收件（Tampermonkey 帶入用）
+   支援：?room=&name=&age=&time=&sale=
+══════════════════════════════════════════════ */
+function getQueryParam(k){
+  try{var u=new URL(window.location.href);return u.searchParams.get(k)||'';}
+  catch(e){return '';}
+}
+var QP_APPLIED={fields:false,sale:false};
+function applyQueryParams(phase){
+  var room=getQueryParam('room'),name=getQueryParam('name'),
+      age=getQueryParam('age'),time=getQueryParam('time'),
+      sale=getQueryParam('sale');
+
+  // Phase 1：一次性套欄位（DOM ready 後呼叫）
+  if(phase==='fields'&&!QP_APPLIED.fields){
+    var ageN=parseInt(age)||0;
+    if(ageN){
+      if(ageN>=4&&ageN<=12)setMode('kids');
+      else if(ageN>=13&&ageN<=17)setMode('teen');
+    }
+    if(time){st.time=time;refreshTG();}
+    if(room){document.getElementById('i-room').value=room;}
+    if(name){
+      if(mode==='kids')document.getElementById('i-name').value=name;
+      else if(mode==='teen')document.getElementById('i-name-teen').value=name;
+    }
+    if(ageN){
+      if(mode==='kids'){
+        var ae=document.getElementById('i-age');ae.value=ageN;
+        ae.dispatchEvent(new Event('input',{bubbles:true}));
+      }else if(mode==='teen'){
+        var ae2=document.getElementById('i-age-teen');ae2.value=ageN;
+        ae2.dispatchEvent(new Event('input',{bubbles:true}));
+      }
+    }
+    QP_APPLIED.fields=true;
+    render();
+  }
+
+  // Phase 2：SALES 就緒後套業務（可能多次觸發，只套一次）
+  if(phase==='sale'&&!QP_APPLIED.sale&&sale&&SALES&&SALES.length){
+    var matched='';
+    for(var i=0;i<SALES.length;i++){
+      if(SALES[i].toLowerCase().indexOf(sale.toLowerCase())>=0){matched=SALES[i];break;}
+    }
+    if(!matched)matched=sale; // 找不到也把原字串填進 input
+    st.sale=matched;
+    document.getElementById('i-sale').value=matched;
+    var csale=document.getElementById('c-sale');
+    if(csale)csale.querySelectorAll('.chip').forEach(function(b){
+      b.classList.toggle('sel',b.dataset.val===matched);
+    });
+    QP_APPLIED.sale=true;
+    render();
+  }
+}
+
+/* ══════════════════════════════════════════════
+   Cache 層（20 分鐘）
+══════════════════════════════════════════════ */
+var CACHE_KEY = 'etalking_app_cache_v1';
+var CACHE_TTL_MS = 20 * 60 * 1000;
+
+function cacheRead(){
+  try{
+    var raw = localStorage.getItem(CACHE_KEY);
+    if(!raw) return null;
+    var obj = JSON.parse(raw);
+    if(!obj || !obj.timestamp) return null;
+    if(Date.now() - obj.timestamp > CACHE_TTL_MS) return null;
+    return obj;
+  }catch(e){return null;}
+}
+function cacheWrite(data){
+  try{
+    localStorage.setItem(CACHE_KEY, JSON.stringify({
+      config: data.config || null,
+      sales: data.sales || [],
+      timestamp: Date.now()
+    }));
+  }catch(e){/* 容量滿 / 無痕模式等 */}
+}
+function cacheClear(){ try{localStorage.removeItem(CACHE_KEY);}catch(e){} }
+
+// 秒數格式化（N 分鐘前）
+function cacheAgeText(ts){
+  var diff = Math.floor((Date.now() - ts) / 1000);
+  if(diff < 60) return diff + ' 秒前';
+  var m = Math.floor(diff / 60);
+  return m + ' 分前';
+}
+
+// 強制重抓入口：?force=1
+function isForceReload(){
+  try{return new URL(window.location.href).searchParams.get('force')==='1';}catch(e){return false;}
+}
+
+function loadConfig(){
+  // ── Cache 優先 ──
+  if(!isForceReload()){
+    var cached = cacheRead();
+    if(cached && cached.config){
+      showLoading('從快取載入…');
+      var cfg = cached.config;
+      // default_time：只有 URL 沒帶 time 才套用（修 bug）
+      if(cfg.default_time && !getQueryParam('time')){
+        DEFAULT_TIME = cfg.default_time;
+        if(!QP_APPLIED.fields || !getQueryParam('time')){
+          st.time = DEFAULT_TIME; refreshTG();
+        }
+      }
+      applyNotesFromConfig(cfg);
+      if(cached.sales && cached.sales.length){
+        SALES = cached.sales;
+        buildSaleChips();
+        setStCached('班表（' + SALES.length + ' 位：' + SALES.join('、') + '）', cached.timestamp);
+      }else{
+        setStCached('快取（無業務名單）', cached.timestamp);
+      }
+      hideLoading();
+      return;
+    }
+  }else{
+    cacheClear();
+  }
+
+  // ── Cache miss：走原本流程 ──
+  showLoading('載入設定中…');
+  fetch('./config.json?v='+Date.now(),{cache:'no-store'})
+    .then(function(r){if(!r.ok)throw 'config.json 回應 '+r.status;return r.json();})
+    .then(function(cfg){
+      // default_time：URL 有 time 時不要覆蓋（修 bug）
+      if(cfg.default_time && !getQueryParam('time')){
+        DEFAULT_TIME=cfg.default_time;st.time=DEFAULT_TIME;refreshTG();
+      }else if(cfg.default_time){
+        DEFAULT_TIME=cfg.default_time; // 記下來但不覆蓋當前 st.time
+      }
+      applyNotesFromConfig(cfg);
+      window.__lastConfig = cfg; // 給 trySheets 快取使用
+      var fallback=cfg.sales&&cfg.sales.length?cfg.sales:null;
+      if(cfg.sheet_url){trySheets(cfg.sheet_url,fallback);}  // trySheets handles hideLoading
+      else{
+        if(fallback){
+          SALES=fallback;buildSaleChips();
+          setSt('✅ config.sales（'+SALES.join('、')+'）','ok');
+          cacheWrite({config: cfg, sales: fallback});
+        }
+        else{setSt('⚠️ config.json 無 sheet_url 亦無 sales','err');}
+        hideLoading();
+      }
+    })
+    .catch(function(e){setSt('⚠️ 無法載入 config.json（'+e+'）','err');hideLoading();});
+}
+
+/* ══════════════════════════════════════════════
+   Wiring
+══════════════════════════════════════════════ */
+document.querySelectorAll('.tab').forEach(function(t){t.addEventListener('click',function(){setMode(t.dataset.mode);});});
+document.getElementById('i-sale').addEventListener('input',function(e){
+  st.sale=e.target.value;
+  document.getElementById('c-sale').querySelectorAll('.chip').forEach(function(b){b.classList.toggle('sel',st.sale===b.dataset.val);});
+  render();
+});
+document.getElementById('i-room').addEventListener('input',render);
+document.getElementById('i-name').addEventListener('input',render);
+document.getElementById('i-name-teen').addEventListener('input',render);
+document.getElementById('tog-demo').addEventListener('change',render);
+document.getElementById('tog-origami').addEventListener('change',render);
+document.getElementById('i-score').addEventListener('input',function(e){
+  st.score=e.target.value;
+  document.getElementById('c-score').querySelectorAll('.chip').forEach(function(b){b.classList.toggle('sel',st.score===b.dataset.val);});
+  render();
+});
+document.getElementById('i-age').addEventListener('input',function(e){
+  var age=parseInt(e.target.value)||0;
+  document.getElementById('age-hint').classList.toggle('show',age>=4&&age<=12);
+  // Auto 摺紙 for age 4–7
+  var origBox=document.getElementById('tog-origami');
+  var hint=document.getElementById('origami-hint');
+  if(age>=4&&age<=7){origBox.checked=true;hint.style.display='';}
+  else{origBox.checked=false;hint.style.display='none';}
+  refreshKL();render();
+});
+document.getElementById('i-age-teen').addEventListener('input',function(e){
+  var age=parseInt(e.target.value)||0;
+  document.getElementById('age-hint-teen').classList.toggle('show',age>=13&&age<=17);
+  refreshTL();render();
+});
+document.getElementById('btn-auto-kids').addEventListener('click',function(){
+  var lv=computeLevel();
+  if(!lv){showToast(this,'請先選擇程度');return;}
+  var sugs=lookupAuto(LEVEL_AUTO,lv);
+  if(!sugs||!sugs.length){showToast(this,'此程度暫無自動建議，請手動選擇');return;}
+  st.notes_kids=sugs.slice();
+  buildNotes('notes-kids-wrap',NOTE_CATS_KIDS,'notes_kids');
+  render();
+});
+document.getElementById('btn-clr-kids').addEventListener('click',function(){
+  st.notes_kids=[];
+  buildNotes('notes-kids-wrap',NOTE_CATS_KIDS,'notes_kids');
+  render();
+});
+document.getElementById('btn-auto-teen').addEventListener('click',function(){
+  var lv=computeLevel();
+  if(!lv){showToast(this,'請先選擇程度');return;}
+  var sugs=lookupAuto(LEVEL_AUTO_TEEN,lv);
+  if(!sugs||!sugs.length){showToast(this,'此程度暫無自動建議，請手動選擇');return;}
+  st.notes_teen=sugs.slice();
+  buildNotes('notes-teen-wrap',NOTE_CATS_TEEN,'notes_teen');
+  render();
+});
+document.getElementById('btn-clr-teen').addEventListener('click',function(){
+  st.notes_teen=[];
+  buildNotes('notes-teen-wrap',NOTE_CATS_TEEN,'notes_teen');
+  render();
+});
+document.getElementById('copy-btn').addEventListener('click',function(){
+  navigator.clipboard.writeText(document.getElementById('preview').value).then(function(){
+    var b=document.getElementById('copy-btn');b.textContent='已複製！';b.classList.add('ok');
+    setTimeout(function(){b.textContent='複製訊息';b.classList.remove('ok');},1800);
+  });
+});
+document.getElementById('late-custom').addEventListener('input',renderLate);
+document.getElementById('late-copy').addEventListener('click',function(){
+  navigator.clipboard.writeText(document.getElementById('late-out').value).then(function(){
+    var b=document.getElementById('late-copy');b.textContent='已複製！';b.classList.add('ok');
+    setTimeout(function(){b.textContent='複製遲到通知';b.classList.remove('ok');},1800);
+  });
+});
+
+/* ══════════════════════════════════════════════
+   IT 環境測試 狀況通報 template
+══════════════════════════════════════════════ */
+var IT_STATUS_OPTS  = ['環測取消','改約'];
+var IT_CLOSING_OPTS = ['謝謝','感恩','再麻煩'];
+
+var itSt = {
+  date:'today', dateCustom:'',
+  time:'',
+  hasStudent:false, studentName:'', studentId:'',
+  status:'',
+  hasFollowup:false, followupAction:'已改約',
+  fuDate:'today', fuDateCustom:'', fuTime:'',
+  closing:'', closingCustom:''
+};
+
+/* ── helpers ── */
+function itDateStr(which, customVal){
+  var today=new Date();
+  var d;
+  if(which==='today') d=today;
+  else if(which==='tomorrow'){d=new Date(today);d.setDate(d.getDate()+1);}
+  else if(which==='custom'&&customVal){
+    var p=customVal.split('-');
+    if(p.length===3)d=new Date(parseInt(p[0]),parseInt(p[1])-1,parseInt(p[2]));
+  }
+  if(!d||isNaN(d))return '';
+  return (d.getMonth()+1)+'/'+(d.getDate()<10?'0':'')+d.getDate();
+}
+
+function buildItTimeGrid(containerId, stateKey, onChange){
+  var g=document.getElementById(containerId);if(!g)return;g.innerHTML='';
+  for(var h=13;h<=21;h++){
+    ['30'].forEach(function(m){
+      if(h===21&&m==='30')return;
+      var val=h+':'+m;
+      var b=document.createElement('div');
+      b.className='chip late-chip';b.style.cssText='padding:4px 8px;font-size:11px;min-width:44px;text-align:center';
+      b.textContent=val;b.dataset.val=val;
+      b.classList.toggle('sel',itSt[stateKey]===val);
+      b.addEventListener('click',(function(v,sid,cb){return function(){
+        itSt[sid]=itSt[sid]===v?'':v;
+        document.getElementById(containerId).querySelectorAll('.chip').forEach(function(x){x.classList.toggle('sel',itSt[sid]===x.dataset.val);});
+        if(cb)cb();
+        renderIT();
+      };})(val,stateKey,onChange));
+      g.appendChild(b);
+    });
+  }
+}
+
+function buildItChips(containerId, opts, stateKey, onPick){
+  var g=document.getElementById(containerId);if(!g)return;g.innerHTML='';
+  opts.forEach(function(v){
+    var b=document.createElement('div');b.className='chip late-chip';b.textContent=v;b.dataset.val=v;
+    b.classList.toggle('sel',itSt[stateKey]===v);
+    b.addEventListener('click',function(){
+      itSt[stateKey]=itSt[stateKey]===v?'':v;
+      g.querySelectorAll('.chip').forEach(function(x){x.classList.toggle('sel',itSt[stateKey]===x.dataset.val);});
+      if(onPick)onPick(itSt[stateKey]);
+      renderIT();
+    });
+    g.appendChild(b);
+  });
+}
+
+function buildItDateChips(containerId, stateKey, customInputId){
+  var g=document.getElementById(containerId);if(!g)return;g.innerHTML='';
+  var opts=[{label:'今天',val:'today'},{label:'明天',val:'tomorrow'},{label:'指定日期',val:'custom'}];
+  opts.forEach(function(o){
+    var b=document.createElement('div');b.className='chip late-chip';b.textContent=o.label;b.dataset.val=o.val;
+    b.classList.toggle('sel',itSt[stateKey]===o.val);
+    b.addEventListener('click',function(){
+      itSt[stateKey]=o.val;
+      g.querySelectorAll('.chip').forEach(function(x){x.classList.toggle('sel',itSt[stateKey]===x.dataset.val);});
+      var ci=document.getElementById(customInputId);
+      if(ci)ci.style.display=o.val==='custom'?'':'none';
+      renderIT();
+    });
+    g.appendChild(b);
+  });
+  // init custom input visibility
+  var ci=document.getElementById(customInputId);
+  if(ci)ci.style.display=itSt[stateKey]==='custom'?'':'none';
+}
+
+function initItCard(){
+  // Date chips
+  buildItDateChips('it-date-chips','date','it-date-custom');
+  document.getElementById('it-date-custom').addEventListener('input',function(){itSt.dateCustom=this.value;renderIT();});
+
+  // Time grid
+  buildItTimeGrid('it-tg','time',null);
+
+  // Student toggle
+  document.getElementById('it-tog-student').addEventListener('change',function(){
+    itSt.hasStudent=this.checked;
+    var row=document.getElementById('it-student-row');
+    row.style.display=this.checked?'flex':'none';
+    renderIT();
+  });
+  document.getElementById('it-name').addEventListener('input',function(){itSt.studentName=this.value;renderIT();});
+  document.getElementById('it-id').addEventListener('input',function(){itSt.studentId=this.value;renderIT();});
+
+  // Status chips
+  buildItChips('it-status-chips',IT_STATUS_OPTS,'status',null);
+
+  // Follow-up toggle
+  document.getElementById('it-tog-followup').addEventListener('change',function(){
+    itSt.hasFollowup=this.checked;
+    document.getElementById('it-followup-row').style.display=this.checked?'':'none';
+    renderIT();
+  });
+
+  // Follow-up action chips (已改約)
+  buildItChips('it-followup-type',['已改約'],'followupAction',function(v){
+    document.getElementById('it-followup-dt').style.display=v?'':'none';
+  });
+  // init: show dt if followupAction set
+  document.getElementById('it-followup-dt').style.display=itSt.followupAction?'':'none';
+
+  // Follow-up date chips
+  buildItDateChips('it-fu-date-chips','fuDate','it-fu-date-custom');
+  document.getElementById('it-fu-date-custom').addEventListener('input',function(){itSt.fuDateCustom=this.value;renderIT();});
+
+  // Follow-up time grid
+  buildItTimeGrid('it-fu-tg','fuTime',null);
+
+  // Closing chips + custom
+  buildItChips('it-closing-chips',IT_CLOSING_OPTS,'closing',function(v){
+    var ci=document.getElementById('it-closing-custom');
+    if(ci){ci.style.display='none';ci.value='';}
+  });
+  // add "自填" chip
+  (function(){
+    var g=document.getElementById('it-closing-chips');
+    var b=document.createElement('div');b.className='chip late-chip';b.textContent='自填';b.dataset.val='_custom';
+    b.classList.toggle('sel',itSt.closing==='_custom');
+    b.addEventListener('click',function(){
+      itSt.closing=itSt.closing==='_custom'?'':'_custom';
+      g.querySelectorAll('.chip').forEach(function(x){x.classList.toggle('sel',itSt.closing===x.dataset.val);});
+      var ci=document.getElementById('it-closing-custom');
+      if(ci)ci.style.display=itSt.closing==='_custom'?'':'none';
+      renderIT();
+    });
+    g.appendChild(b);
+  })();
+  document.getElementById('it-closing-custom').addEventListener('input',function(){itSt.closingCustom=this.value;renderIT();});
+
+  // Copy button
+  document.getElementById('it-copy').addEventListener('click',function(){
+    navigator.clipboard.writeText(document.getElementById('it-out').value).then(function(){
+      var b=document.getElementById('it-copy');b.textContent='已複製！';b.classList.add('ok');
+      setTimeout(function(){b.textContent='複製 IT 改約通知';b.classList.remove('ok');},1800);
+    });
+  });
+
+  renderIT();
+}
+
+function renderIT(){
+  var dateStr=itDateStr(itSt.date,itSt.dateCustom);
+  var parts=[dateStr,itSt.time];
+  if(itSt.hasStudent){
+    var s=(itSt.studentName||'').trim();
+    var sid=(itSt.studentId||'').trim();
+    if(s||sid)parts.push([s,sid].filter(Boolean).join(' '));
+  }
+  if(itSt.status)parts.push(itSt.status);
+  var lines=[parts.filter(Boolean).join(' ')];
+
+  if(itSt.hasFollowup&&itSt.followupAction==='已改約'){
+    var fdate=itDateStr(itSt.fuDate,itSt.fuDateCustom);
+    var fdt=[fdate,itSt.fuTime].filter(Boolean).join(' ');
+    lines.push('已改約'+(fdt?'：'+fdt:''));
+  }
+
+  var closing=itSt.closing==='_custom'
+    ?(document.getElementById('it-closing-custom')||{}).value||''
+    :itSt.closing||'';
+  if(closing)lines.push(closing);
+
+  document.getElementById('it-out').value=lines.join('\n');
+}
+
+// Wire config loader to also apply IT opts
+var _origApplyNotes=applyNotesFromConfig;
+applyNotesFromConfig=function(cfg){
+  _origApplyNotes(cfg);
+  if(cfg.it_env_test){
+    if(cfg.it_env_test.status_opts&&cfg.it_env_test.status_opts.length)
+      IT_STATUS_OPTS=cfg.it_env_test.status_opts;
+    if(cfg.it_env_test.closing_opts&&cfg.it_env_test.closing_opts.length)
+      IT_CLOSING_OPTS=cfg.it_env_test.closing_opts;
+  }
+};
+
+initItCard();
+buildTimeGrid();
+buildKidsLevel();
+buildTeenLevel();
+buildSimpleChips('c-score',['未做'],'score',false);
+buildSimpleChips('c-tpref',TEACHER_PREF,'tpref',false);
+buildSimpleChips('c-notes-adult',NOTES_ADULT_ITEMS,'notes_adult',true);
+buildNotes('notes-kids-wrap',NOTE_CATS_KIDS,'notes_kids');
+buildNotes('notes-teen-wrap',NOTE_CATS_TEEN,'notes_teen');
+document.getElementById('c-tpref').querySelectorAll('.chip').forEach(function(b){b.classList.toggle('sel',st.tpref===b.dataset.val);});
+buildLateRow('late-status','lStatus',LATE_STATUS_OPTS,onStatusPick);
+buildLateRow('late-desc-prefix','lDescPrefix',LATE_DESC_PREFIX_OPTS,true);
+buildLateRow('late-desc-time','lDescTime',LATE_DESC_TIME_OPTS,true);
+buildReasonRow();
+refreshTG();
+applyQueryParams('fields');
+// 注入版本號到頁首
+(function(){
+  var main=document.getElementById('hdr-main'); if(main)main.textContent=APP_TITLE_MAIN;
+  var sub=document.getElementById('hdr-sub');   if(sub)sub.textContent=APP_TITLE_SUB;
+  var ver=document.getElementById('hdr-ver');   if(ver)ver.textContent='v'+APP_VERSION;
+})();
+loadConfig();
+render();
+</script>
+</body>
+</html>
